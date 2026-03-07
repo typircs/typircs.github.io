@@ -2,12 +2,12 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>VR視力回復ゲーム (WebXR版)</title>
+  <title>VR視力回復ゲーム (WebXR版 - UI固定＆スタートボタン)</title>
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script>
-    // ゲームのメインロジックコンポーネント
     AFRAME.registerComponent('game-manager', {
       init: function () {
+        this.isPlaying = false; // ゲームの進行状態
         this.score = 0;
         this.level = 1;
         this.hitCount = 0;
@@ -17,65 +17,65 @@
         this.uiScore = document.querySelector('#ui-score');
         this.uiLevel = document.querySelector('#ui-level');
         this.uiMessage = document.querySelector('#ui-message');
+        this.startButton = document.querySelector('#start-button');
 
-        // レーンのX座標 (左、中央、右)
         const laneX = [-2, 0, 2];
-        const MIN_Z = -1.5; // 最前列 (プレイヤーに近い)
-        const MAX_Z = -30;  // 最奥
+        const MIN_Z = -1.5; 
+        const MAX_Z = -30;  
+
+        // スタートボタンの処理
+        this.startButton.addEventListener('click', () => {
+          this.startGame();
+        });
+        // ボタンのホバー演出
+        this.startButton.addEventListener('mouseenter', () => {
+          this.startButton.setAttribute('material', 'color: #81c784');
+        });
+        this.startButton.addEventListener('mouseleave', () => {
+          this.startButton.setAttribute('material', 'color: #4CAF50');
+        });
 
         // ターゲットの初期化
         for(let i=0; i<3; i++) {
           let el = document.createElement('a-entity');
-          el.setAttribute('class', 'target');
-          el.setAttribute('position', `${laneX[i]} 1.5 ${MIN_Z - Math.random() * 10}`);
+          // 待機中は少し奥に配置
+          el.setAttribute('position', `${laneX[i]} 1.5 -5`);
           
-          // ヒットボックス（透明な板）
           let hitbox = document.createElement('a-box');
           hitbox.setAttribute('width', '1.2');
           hitbox.setAttribute('height', '1.2');
           hitbox.setAttribute('depth', '0.1');
           hitbox.setAttribute('material', 'opacity: 0.1; color: #fff');
-          hitbox.setAttribute('class', 'hitbox');
+          // raycasterの判定用に 'clickable' クラスを付与
+          hitbox.setAttribute('class', 'clickable hitbox');
           
-          // ランドルト環 (リングの一部を欠けさせる)
           let landolt = document.createElement('a-ring');
           landolt.setAttribute('radius-inner', '0.3');
           landolt.setAttribute('radius-outer', '0.45');
           landolt.setAttribute('color', '#ffffff');
-          // theta-start=30, length=300 で右側が欠けた状態(デフォルト)になる
           landolt.setAttribute('theta-start', '30');
           landolt.setAttribute('theta-length', '300');
-          landolt.setAttribute('class', 'landolt');
           
-          // スタンド
           let stand = document.createElement('a-cylinder');
           stand.setAttribute('radius', '0.05');
           stand.setAttribute('height', '1.5');
           stand.setAttribute('position', '0 -0.75 0');
           stand.setAttribute('color', '#333333');
-          stand.setAttribute('class', 'stand');
 
           el.appendChild(hitbox);
           el.appendChild(landolt);
           el.appendChild(stand);
           this.el.sceneEl.appendChild(el);
 
-          // ターゲットのデータオブジェクト
           let targetData = { 
-            el: el, 
-            landolt: landolt, 
-            stand: stand, 
-            hitbox: hitbox,
-            lane: i, 
-            z: el.getAttribute('position').z, 
-            dir: 0, 
-            isYellow: false 
+            el: el, landolt: landolt, stand: stand, hitbox: hitbox,
+            lane: i, z: -5, dir: 0, isYellow: false 
           };
           this.randomizeDir(targetData);
           this.targets.push(targetData);
 
-          // レーザーやマウスが当たった時の処理 (エイム)
           el.addEventListener('mouseenter', () => {
+            if(!this.isPlaying) return;
             hitbox.setAttribute('material', 'color: #00ffff; opacity: 0.4');
             this.selectedTarget = targetData;
           });
@@ -87,7 +87,7 @@
 
         // キーボード入力 (PC用)
         window.addEventListener('keydown', (e) => {
-          if(!this.selectedTarget) return;
+          if(!this.isPlaying || !this.selectedTarget) return;
           let inputDir = -1;
           if(e.key === 'ArrowUp') inputDir = 0;
           if(e.key === 'ArrowRight') inputDir = 1;
@@ -101,11 +101,10 @@
         const hands = document.querySelectorAll('.vr-controller');
         hands.forEach(hand => {
           hand.addEventListener('thumbstickmoved', (e) => {
-            if(!this.selectedTarget) return;
+            if(!this.isPlaying || !this.selectedTarget) return;
             let x = e.detail.x;
             let y = e.detail.y;
             
-            // スティックが中央に戻るまで連続入力を防ぐ
             if(Math.abs(x) < 0.5 && Math.abs(y) < 0.5) {
               this.stickMoved = false; 
               return;
@@ -113,10 +112,10 @@
             if(this.stickMoved) return;
 
             let inputDir = -1;
-            if(y < -0.7) inputDir = 0; // 上
-            else if(x > 0.7) inputDir = 1; // 右
-            else if(y > 0.7) inputDir = 2; // 下
-            else if(x < -0.7) inputDir = 3; // 左
+            if(y < -0.7) inputDir = 0;
+            else if(x > 0.7) inputDir = 1;
+            else if(y > 0.7) inputDir = 2;
+            else if(x < -0.7) inputDir = 3;
 
             if(inputDir !== -1) {
               this.stickMoved = true;
@@ -126,28 +125,46 @@
         });
       },
 
+      startGame: function() {
+        this.isPlaying = true;
+        this.score = 0;
+        this.level = 1;
+        this.hitCount = 0;
+        
+        // スタートボタンを非表示＆非判定にする
+        this.startButton.setAttribute('visible', 'false');
+        this.startButton.classList.remove('clickable');
+
+        this.uiMessage.setAttribute('value', 'GAME START!');
+        this.uiMessage.setAttribute('color', '#00FF00');
+        this.updateUI();
+
+        // ターゲットの位置をランダムに初期化
+        this.targets.forEach(t => {
+          t.z = -2 - Math.random() * 5;
+          this.randomizeDir(t);
+          t.isYellow = false;
+          t.stand.setAttribute('color', '#333333');
+          t.hitbox.setAttribute('material', 'color: #fff; opacity: 0.1');
+        });
+        this.selectedTarget = null;
+      },
+
       randomizeDir: function(tData) {
-        // 0:上, 1:右, 2:下, 3:左
         tData.dir = Math.floor(Math.random() * 4);
-        let rotZ = 0;
-        if(tData.dir === 0) rotZ = 90;
-        if(tData.dir === 1) rotZ = 0;
-        if(tData.dir === 2) rotZ = 270;
-        if(tData.dir === 3) rotZ = 180;
+        let rotZ = tData.dir === 0 ? 90 : tData.dir === 1 ? 0 : tData.dir === 2 ? 270 : 180;
         tData.landolt.setAttribute('rotation', `0 0 ${rotZ}`);
       },
 
       checkHit: function(inputDir) {
         let tData = this.selectedTarget;
         if(tData.dir === inputDir) {
-          // Hit または Combo
           let isCombo = tData.isYellow;
           let pushBack = isCombo ? (8 + this.level * 2) : (4 + this.level * 1);
           
-          tData.z = Math.max(-30, tData.z - pushBack); // 奥へ押し返す (Z軸マイナス方向)
+          tData.z = Math.max(-30, tData.z - pushBack);
           this.randomizeDir(tData);
 
-          // スタンドの色変更
           this.targets.forEach(t => {
             t.isYellow = false;
             t.stand.setAttribute('color', '#333333');
@@ -157,14 +174,12 @@
             tData.stand.setAttribute('color', '#aaaa00');
           }
 
-          // UI表示
           this.uiMessage.setAttribute('value', isCombo ? 'COMBO!!' : 'HIT!');
           this.uiMessage.setAttribute('color', isCombo ? '#FFD700' : '#00FF00');
 
-          // スコア計算 (手前の2つのみスコア加算される仕様)
-          let sorted = [...this.targets].sort((a,b) => b.z - a.z); // Zが大きい(0に近い)=手前
+          let sorted = [...this.targets].sort((a,b) => b.z - a.z);
           if(tData === sorted[0] || tData === sorted[1]) {
-            let distanceScore = Math.floor(Math.abs(tData.z)); // 遠いほど高得点
+            let distanceScore = Math.floor(Math.abs(tData.z));
             this.score += isCombo ? distanceScore * 2 : distanceScore;
           }
 
@@ -174,7 +189,6 @@
             this.hitCount = 0;
           }
         } else {
-          // Miss
           tData.isYellow = false;
           tData.stand.setAttribute('color', '#333333');
           this.uiMessage.setAttribute('value', 'MISS...');
@@ -190,11 +204,13 @@
       },
 
       tick: function (time, timeDelta) {
+        if (!this.isPlaying) return; // ゲーム開始前は動かさない
+
         let speed = (0.02 + this.level * 0.005) * (timeDelta / 16);
         let anyAtFront = false;
 
         this.targets.forEach(t => {
-          t.z += speed; // 手前へ接近
+          t.z += speed;
           if(t.z >= -1.5) {
             t.z = -1.5;
             anyAtFront = true;
@@ -202,7 +218,6 @@
           t.el.setAttribute('position', `${t.lane === 0 ? -2 : t.lane === 1 ? 0 : 2} 1.5 ${t.z}`);
         });
 
-        // ターゲットが最前列に留まり続けるとレベルダウン
         if(anyAtFront && Math.random() < 0.01 && this.level > 1) {
           this.level--;
           this.updateUI();
@@ -216,21 +231,24 @@
     
     <a-entity position="0 0 0">
       <a-camera position="0 1.6 0">
-        <a-entity cursor="rayOrigin: mouse" raycaster="objects: .target"></a-entity>
-        
-        <a-entity position="0 0.8 -1.5">
-          <a-text id="ui-score" value="Score: 0" position="-0.8 0 0" color="#FFD700" width="3"></a-text>
-          <a-text id="ui-level" value="Level: 1" position="0.5 0 0" color="#FFF" width="3"></a-text>
-          <a-text id="ui-message" value="AIM AND PUSH!" position="0 -0.2 0" align="center" color="#AAA" width="4"></a-text>
-        </a-entity>
+        <a-entity cursor="rayOrigin: mouse" raycaster="objects: .clickable"></a-entity>
       </a-camera>
+      
+      <a-entity class="vr-controller" laser-controls="hand: left" raycaster="objects: .clickable; showLine: true"></a-entity>
+      <a-entity class="vr-controller" laser-controls="hand: right" raycaster="objects: .clickable; showLine: true"></a-entity>
+    </a-entity>
 
-      <a-entity class="vr-controller" laser-controls="hand: left" raycaster="objects: .target; showLine: true"></a-entity>
-      <a-entity class="vr-controller" laser-controls="hand: right" raycaster="objects: .target; showLine: true"></a-entity>
+    <a-entity id="world-ui" position="0 3.5 -4">
+      <a-text id="ui-score" value="Score: 0" position="-1.5 0 0" color="#FFD700" width="5"></a-text>
+      <a-text id="ui-level" value="Level: 1" position="1.5 0 0" color="#FFF" width="5"></a-text>
+      <a-text id="ui-message" value="PRESS START" position="0 -0.5 0" align="center" color="#AAA" width="6"></a-text>
+    </a-entity>
+
+    <a-entity id="start-button" class="clickable" position="0 1.5 -3" geometry="primitive: plane; width: 1.5; height: 0.6" material="color: #4CAF50">
+      <a-text value="START" align="center" position="0 0 0.01" width="5" color="#FFF"></a-text>
     </a-entity>
 
     <a-grid id="ground" width="10" height="40" src="https://cdn.aframe.io/a-painter/images/floor.jpg" position="0 0 -15" rotation="-90 0 0"></a-grid>
-    
     <a-entity position="-2 0.01 -15" rotation="-90 0 0" geometry="primitive: plane; width: 0.1; height: 32" material="color: #555"></a-entity>
     <a-entity position="0 0.01 -15" rotation="-90 0 0" geometry="primitive: plane; width: 0.1; height: 32" material="color: #555"></a-entity>
     <a-entity position="2 0.01 -15" rotation="-90 0 0" geometry="primitive: plane; width: 0.1; height: 32" material="color: #555"></a-entity>
