@@ -2,12 +2,12 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>VR視力回復ゲーム (WebXR版 - UI固定＆スタートボタン)</title>
+  <title>VR視力回復ゲーム (WebXR版 - 完全版)</title>
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script>
     AFRAME.registerComponent('game-manager', {
       init: function () {
-        this.isPlaying = false; // ゲームの進行状態
+        this.isPlaying = false;
         this.score = 0;
         this.level = 1;
         this.hitCount = 0;
@@ -17,37 +17,43 @@
         this.uiScore = document.querySelector('#ui-score');
         this.uiLevel = document.querySelector('#ui-level');
         this.uiMessage = document.querySelector('#ui-message');
+        
         this.startButton = document.querySelector('#start-button');
+        this.resetButton = document.querySelector('#reset-button');
 
         const laneX = [-2, 0, 2];
-        const MIN_Z = -1.5; 
-        const MAX_Z = -30;  
 
-        // スタートボタンの処理
-        this.startButton.addEventListener('click', () => {
-          this.startGame();
-        });
-        // ボタンのホバー演出
+        // --- ボタンのイベント設定 ---
+        this.startButton.addEventListener('click', () => this.startGame());
+        this.resetButton.addEventListener('click', () => this.resetGame());
+
+        // ボタンのホバー演出（Start）
         this.startButton.addEventListener('mouseenter', () => {
-          this.startButton.setAttribute('material', 'color: #81c784');
+          if(!this.isPlaying) this.startButton.setAttribute('material', 'color: #81c784');
         });
         this.startButton.addEventListener('mouseleave', () => {
           this.startButton.setAttribute('material', 'color: #4CAF50');
         });
 
-        // ターゲットの初期化
+        // ボタンのホバー演出（Reset）
+        this.resetButton.addEventListener('mouseenter', () => {
+          if(this.isPlaying) this.resetButton.setAttribute('material', 'color: #e57373');
+        });
+        this.resetButton.addEventListener('mouseleave', () => {
+          this.resetButton.setAttribute('material', 'color: #f44336');
+        });
+
+        // --- ターゲットの初期化 ---
         for(let i=0; i<3; i++) {
           let el = document.createElement('a-entity');
-          // 待機中は少し奥に配置
-          el.setAttribute('position', `${laneX[i]} 1.5 -5`);
+          el.setAttribute('visible', 'false'); // 開始前は非表示にする
           
           let hitbox = document.createElement('a-box');
           hitbox.setAttribute('width', '1.2');
           hitbox.setAttribute('height', '1.2');
           hitbox.setAttribute('depth', '0.1');
           hitbox.setAttribute('material', 'opacity: 0.1; color: #fff');
-          // raycasterの判定用に 'clickable' クラスを付与
-          hitbox.setAttribute('class', 'clickable hitbox');
+          hitbox.setAttribute('class', 'clickable hitbox'); // ここがレーザーに反応する
           
           let landolt = document.createElement('a-ring');
           landolt.setAttribute('radius-inner', '0.3');
@@ -71,21 +77,22 @@
             el: el, landolt: landolt, stand: stand, hitbox: hitbox,
             lane: i, z: -5, dir: 0, isYellow: false 
           };
-          this.randomizeDir(targetData);
           this.targets.push(targetData);
 
-          el.addEventListener('mouseenter', () => {
+          // 【修正】当たり判定をhitboxに直接付与して確実にイベントを発火させる
+          hitbox.addEventListener('mouseenter', () => {
             if(!this.isPlaying) return;
             hitbox.setAttribute('material', 'color: #00ffff; opacity: 0.4');
             this.selectedTarget = targetData;
           });
-          el.addEventListener('mouseleave', () => {
+          hitbox.addEventListener('mouseleave', () => {
+            if(!this.isPlaying) return;
             hitbox.setAttribute('material', 'color: #fff; opacity: 0.1');
             if(this.selectedTarget === targetData) this.selectedTarget = null;
           });
         }
 
-        // キーボード入力 (PC用)
+        // --- キーボード入力 (PC用) ---
         window.addEventListener('keydown', (e) => {
           if(!this.isPlaying || !this.selectedTarget) return;
           let inputDir = -1;
@@ -96,7 +103,7 @@
           if(inputDir !== -1) this.checkHit(inputDir);
         });
 
-        // VRコントローラーのスティック入力 (Quest等用)
+        // --- VRコントローラー入力 (Quest等用) ---
         this.stickMoved = false;
         const hands = document.querySelectorAll('.vr-controller');
         hands.forEach(hand => {
@@ -131,21 +138,48 @@
         this.level = 1;
         this.hitCount = 0;
         
-        // スタートボタンを非表示＆非判定にする
+        // UIの切り替え
         this.startButton.setAttribute('visible', 'false');
         this.startButton.classList.remove('clickable');
+        
+        this.resetButton.setAttribute('visible', 'true');
+        this.resetButton.classList.add('clickable');
 
         this.uiMessage.setAttribute('value', 'GAME START!');
         this.uiMessage.setAttribute('color', '#00FF00');
         this.updateUI();
 
-        // ターゲットの位置をランダムに初期化
-        this.targets.forEach(t => {
-          t.z = -2 - Math.random() * 5;
+        // ターゲットを初期位置に配置して表示
+        this.targets.forEach((t, i) => {
+          t.z = -3 - Math.random() * 5;
+          t.el.setAttribute('position', `${t.lane === 0 ? -2 : t.lane === 1 ? 0 : 2} 1.5 ${t.z}`);
+          t.el.setAttribute('visible', 'true');
           this.randomizeDir(t);
           t.isYellow = false;
           t.stand.setAttribute('color', '#333333');
           t.hitbox.setAttribute('material', 'color: #fff; opacity: 0.1');
+        });
+        this.selectedTarget = null;
+      },
+
+      resetGame: function() {
+        this.isPlaying = false;
+        
+        // UIの切り替え
+        this.startButton.setAttribute('visible', 'true');
+        this.startButton.classList.add('clickable');
+        
+        this.resetButton.setAttribute('visible', 'false');
+        this.resetButton.classList.remove('clickable');
+
+        this.uiMessage.setAttribute('value', 'PRESS START');
+        this.uiMessage.setAttribute('color', '#AAA');
+        this.uiScore.setAttribute('value', 'Score: 0');
+        this.uiLevel.setAttribute('value', 'Level: 1');
+
+        // ターゲットを隠す
+        this.targets.forEach(t => {
+          t.el.setAttribute('visible', 'false');
         });
         this.selectedTarget = null;
       },
@@ -196,6 +230,8 @@
         }
         
         this.updateUI();
+        // 押し返した直後に位置を即座に反映させる
+        tData.el.setAttribute('position', `${tData.lane === 0 ? -2 : tData.lane === 1 ? 0 : 2} 1.5 ${tData.z}`);
       },
 
       updateUI: function() {
@@ -204,7 +240,7 @@
       },
 
       tick: function (time, timeDelta) {
-        if (!this.isPlaying) return; // ゲーム開始前は動かさない
+        if (!this.isPlaying) return;
 
         let speed = (0.02 + this.level * 0.005) * (timeDelta / 16);
         let anyAtFront = false;
@@ -233,9 +269,13 @@
       <a-camera position="0 1.6 0">
         <a-entity cursor="rayOrigin: mouse" raycaster="objects: .clickable"></a-entity>
       </a-camera>
-      
       <a-entity class="vr-controller" laser-controls="hand: left" raycaster="objects: .clickable; showLine: true"></a-entity>
       <a-entity class="vr-controller" laser-controls="hand: right" raycaster="objects: .clickable; showLine: true"></a-entity>
+    </a-entity>
+
+    <a-entity id="controls-panel" position="-3.5 2.5 -3" rotation="0 25 0" geometry="primitive: plane; width: 2.5; height: 2.2" material="color: #222; opacity: 0.8">
+      <a-text value="[ HOW TO PLAY ]\n\n- PC -\nAim: Mouse\nInput: Arrow Keys\n\n- VR -\nAim: Laser Pointer\nInput: Thumbstick\n\n1. Aim at the target.\n2. Input the open direction\n   of the 'C' ring.\n3. Push it back!" 
+              position="-1.1 0.8 0.01" align="left" color="#FFF" width="2.3" line-height="55"></a-text>
     </a-entity>
 
     <a-entity id="world-ui" position="0 3.5 -4">
@@ -246,6 +286,10 @@
 
     <a-entity id="start-button" class="clickable" position="0 1.5 -3" geometry="primitive: plane; width: 1.5; height: 0.6" material="color: #4CAF50">
       <a-text value="START" align="center" position="0 0 0.01" width="5" color="#FFF"></a-text>
+    </a-entity>
+
+    <a-entity id="reset-button" position="3.5 1.5 -3" rotation="0 -25 0" geometry="primitive: plane; width: 1.5; height: 0.6" material="color: #f44336" visible="false">
+      <a-text value="RESET" align="center" position="0 0 0.01" width="5" color="#FFF"></a-text>
     </a-entity>
 
     <a-grid id="ground" width="10" height="40" src="https://cdn.aframe.io/a-painter/images/floor.jpg" position="0 0 -15" rotation="-90 0 0"></a-grid>
