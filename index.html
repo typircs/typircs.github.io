@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>VR視力回復ゲーム (バグ修正・完全動作版)</title>
+  <title>VR視力回復ゲーム (WebXR版 - Beat Recovery 極)</title>
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script>
     AFRAME.registerComponent('game-manager', {
@@ -13,7 +13,7 @@
         this.level = 1;
         this.hitCount = 0;
         this.targets = [];
-        this.handTargets = { 'left-hand': null, 'right-hand': null, 'mouse-cursor': null };
+        this.handTargets = { 'mouse-cursor': null };
         this.audioCtx = null;
         this.penaltyTimer = 0;
 
@@ -21,27 +21,19 @@
           this.uiScore = document.querySelector('#ui-score');
           this.uiLevel = document.querySelector('#ui-level');
           this.uiMessage = document.querySelector('#ui-message');
-          
           this.startButton = document.querySelector('#start-button');
           this.resetButton = document.querySelector('#reset-button');
           this.modeButton = document.querySelector('#mode-button');
 
-          // --- ボタンイベント ---
           this.startButton.addEventListener('click', () => this.startGame());
           this.resetButton.addEventListener('click', () => this.resetGame());
           
           this.modeButton.addEventListener('click', () => {
-            if (this.isPlaying) return; // 念のためプレイ中は無効化
+            if (this.isPlaying) return; 
             this.trainingMode = !this.trainingMode;
             this.modeButton.setAttribute('material', 'color', this.trainingMode ? '#ff9800' : '#607d8b');
-            this.modeButton.querySelector('a-text').setAttribute('value', this.trainingMode ? 'TRAINING: ON' : 'TRAINING: OFF');
-            
-            if (this.trainingMode) {
-              this.el.sceneEl.setAttribute('fog', 'type: linear; color: #0b001a; near: 2; far: 25');
-            } else {
-              this.el.sceneEl.removeAttribute('fog');
-              this.targets.forEach(t => t.landolt.object3D.scale.set(1, 1, 1));
-            }
+            this.modeButton.querySelector('a-text').setAttribute('value', this.trainingMode ? 'SIZE VAR: ON' : 'SIZE VAR: OFF');
+            if (!this.trainingMode) this.targets.forEach(t => t.landolt.object3D.scale.set(1, 1, 1));
           });
 
           const setHover = (btn, colorNormal, colorHover) => {
@@ -85,28 +77,46 @@
 
             let targetData = { 
               el: el, landolt: landolt, stand: stand, hitbox: hitbox,
-              lane: i, x: laneX[i], z: -5, dir: 0, isYellow: false,
-              hoveredBy: new Set() 
+              lane: i, x: laneX[i], z: -5, dir: 0, isYellow: false
             };
             this.targets.push(targetData);
 
             hitbox.addEventListener('mouseenter', (e) => {
               if(!this.isPlaying || !e.detail.cursorEl) return;
               let cursorId = e.detail.cursorEl.id;
-              targetData.hoveredBy.add(cursorId);
-              this.handTargets[cursorId] = targetData;
+              
+              if (cursorId === 'mouse-cursor') {
+                this.handTargets['mouse-cursor'] = targetData;
+              } else {
+                // VRコントローラーのホバー処理（猶予時間用）
+                let hand = document.querySelector('#' + cursorId);
+                if (hand) {
+                  hand.activeTarget = targetData;
+                  hand.isHovering = true;
+                }
+              }
               hitbox.setAttribute('material', 'color: #00ffff; opacity: 0.3');
             });
 
             hitbox.addEventListener('mouseleave', (e) => {
               if(!this.isPlaying || !e.detail.cursorEl) return;
               let cursorId = e.detail.cursorEl.id;
-              targetData.hoveredBy.delete(cursorId);
-              if(this.handTargets[cursorId] === targetData) this.handTargets[cursorId] = null;
-              if(targetData.hoveredBy.size === 0) hitbox.setAttribute('material', 'color: #fff; opacity: 0.1');
+              
+              if (cursorId === 'mouse-cursor') {
+                if(this.handTargets['mouse-cursor'] === targetData) this.handTargets['mouse-cursor'] = null;
+              } else {
+                // VRコントローラーが的から外れた時間を記録
+                let hand = document.querySelector('#' + cursorId);
+                if (hand && hand.activeTarget === targetData) {
+                  hand.isHovering = false;
+                  hand.targetLostTime = performance.now(); // 外れた瞬間の時間
+                }
+              }
+              hitbox.setAttribute('material', 'color: #fff; opacity: 0.1');
             });
           }
 
+          // PCのキーボード入力
           window.addEventListener('keydown', (e) => {
             let tData = this.handTargets['mouse-cursor'];
             if(!this.isPlaying || !tData) return;
@@ -118,45 +128,30 @@
             if(inputDir !== -1) this.checkHit(inputDir, tData);
           });
 
-          // --- VRコントローラー入力 ---
+          // --- VRコントローラーの初期設定 ---
           this.hands = document.querySelectorAll('.vr-controller');
           this.hands.forEach(hand => {
-            hand.stickMoved = false;
-            hand.isDragging = false;
-            hand.dragStartRot = { x: 0, y: 0 };
-            hand.lockedTarget = null; // 【修正】スワイプ用に的をロックする変数
-
-            hand.addEventListener('triggerdown', () => {
-              let tData = this.handTargets[hand.id];
-              if(tData && this.isPlaying) {
-                hand.isDragging = true;
-                hand.dragStartRot = { x: hand.object3D.rotation.x, y: hand.object3D.rotation.y };
-                hand.lockedTarget = tData; // 【修正】トリガーを引いた瞬間の的を記憶する
-              }
-            });
+            hand.worldPos = new THREE.Vector3();
+            hand.prevPos = new THREE.Vector3();
+            hand.hasPrevPos = false;
             
-            hand.addEventListener('triggerup', () => { 
-              hand.isDragging = false; 
-              hand.lockedTarget = null; // 離したらロック解除
-            });
+            hand.activeTarget = null;
+            hand.isHovering = false;
+            hand.targetLostTime = 0;
+            
+            hand.swinging = false;
+            hand.lastSwingTime = 0;
 
+            // スティック入力はそのまま残す
             hand.addEventListener('thumbstickmoved', (e) => {
-              let tData = this.handTargets[hand.id];
-              if(!this.isPlaying || !tData) return;
+              if(!this.isPlaying || !hand.activeTarget) return;
               let x = e.detail.x; let y = e.detail.y;
               if(Math.abs(x) < 0.5 && Math.abs(y) < 0.5) { hand.stickMoved = false; return; }
               if(hand.stickMoved) return;
 
               let inputDir = -1;
-              if(y < -0.7) inputDir = 0;
-              else if(x > 0.7) inputDir = 1;
-              else if(y > 0.7) inputDir = 2;
-              else if(x < -0.7) inputDir = 3;
-
-              if(inputDir !== -1) {
-                hand.stickMoved = true;
-                this.checkHit(inputDir, tData);
-              }
+              if(y < -0.7) inputDir = 0; else if(x > 0.7) inputDir = 1; else if(y > 0.7) inputDir = 2; else if(x < -0.7) inputDir = 3;
+              if(inputDir !== -1) { hand.stickMoved = true; this.checkHit(inputDir, hand.activeTarget); }
             });
           });
         };
@@ -167,12 +162,10 @@
 
       spawnEffect: function(x, y, z, isCombo) {
         let ring = document.createElement('a-ring');
-        ring.setAttribute('radius-inner', '0.5');
-        ring.setAttribute('radius-outer', '0.8');
+        ring.setAttribute('radius-inner', '0.5'); ring.setAttribute('radius-outer', '0.8');
         ring.setAttribute('color', isCombo ? '#FFD700' : '#00FFFF');
         ring.setAttribute('position', `${x} ${y} ${z}`);
         ring.setAttribute('material', 'shader: flat; transparent: true; opacity: 1; side: double');
-        
         ring.setAttribute('animation__scale', 'property: scale; to: 3 3 3; dur: 300; easing: easeOutQuad');
         ring.setAttribute('animation__fade', 'property: material.opacity; to: 0; dur: 300; easing: easeOutQuad');
         
@@ -190,88 +183,63 @@
 
       playSound: function(type) {
         if (!this.audioCtx) return;
-        const ctx = this.audioCtx;
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
+        const ctx = this.audioCtx; const osc = ctx.createOscillator(); const gain = ctx.createGain();
         osc.connect(gain); gain.connect(ctx.destination);
         
         if (type === 'hit') {
-          osc.type = 'sine';
-          osc.frequency.setValueAtTime(880, ctx.currentTime);
+          osc.type = 'sine'; osc.frequency.setValueAtTime(880, ctx.currentTime);
           osc.frequency.exponentialRampToValueAtTime(1760, ctx.currentTime + 0.1);
-          gain.gain.setValueAtTime(0.4, ctx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+          gain.gain.setValueAtTime(0.4, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
           osc.start(); osc.stop(ctx.currentTime + 0.1);
         } else if (type === 'combo') {
-          osc.type = 'square';
-          osc.frequency.setValueAtTime(880, ctx.currentTime);
+          osc.type = 'square'; osc.frequency.setValueAtTime(880, ctx.currentTime);
           osc.frequency.setValueAtTime(1318.51, ctx.currentTime + 0.05);
-          gain.gain.setValueAtTime(0.4, ctx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+          gain.gain.setValueAtTime(0.4, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
           osc.start(); osc.stop(ctx.currentTime + 0.2);
         } else {
-          osc.type = 'sawtooth';
-          osc.frequency.setValueAtTime(150, ctx.currentTime);
+          osc.type = 'sawtooth'; osc.frequency.setValueAtTime(150, ctx.currentTime);
           osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.2);
-          gain.gain.setValueAtTime(0.4, ctx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+          gain.gain.setValueAtTime(0.4, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
           osc.start(); osc.stop(ctx.currentTime + 0.2);
         }
       },
 
       startGame: function() {
         this.initAudio(); 
-        this.isPlaying = true;
-        this.score = 0; this.level = 1; this.hitCount = 0; this.penaltyTimer = 0;
+        this.isPlaying = true; this.score = 0; this.level = 1; this.hitCount = 0; this.penaltyTimer = 0;
         
-        this.startButton.setAttribute('visible', 'false');
-        this.startButton.classList.remove('clickable');
-        
-        // 【修正】モードボタンも隠して誤操作を防ぐ
-        this.modeButton.setAttribute('visible', 'false');
-        this.modeButton.classList.remove('clickable');
+        this.startButton.setAttribute('visible', 'false'); this.startButton.classList.remove('clickable');
+        this.modeButton.setAttribute('visible', 'false'); this.modeButton.classList.remove('clickable');
+        this.resetButton.setAttribute('visible', 'true'); this.resetButton.classList.add('clickable');
 
-        this.resetButton.setAttribute('visible', 'true');
-        this.resetButton.classList.add('clickable');
-
-        this.uiMessage.setAttribute('value', 'GAME START!');
-        this.uiMessage.setAttribute('color', '#00FF00');
+        this.uiMessage.setAttribute('value', 'GAME START!'); this.uiMessage.setAttribute('color', '#00FF00');
         this.updateUI();
 
         this.targets.forEach((t) => {
           t.z = -3 - Math.random() * 5;
           t.el.object3D.position.set(t.x, 1.5, t.z);
-          t.el.setAttribute('visible', 'true');
-          t.hitbox.classList.add('clickable');
-          this.randomizeDir(t);
-          t.isYellow = false;
-          t.stand.setAttribute('color', '#444');
+          t.el.setAttribute('visible', 'true'); t.hitbox.classList.add('clickable');
+          this.randomizeDir(t); t.isYellow = false; t.stand.setAttribute('color', '#444');
           t.hitbox.setAttribute('material', 'color: #fff; opacity: 0.1');
-          t.hoveredBy.clear();
         });
+
+        // コントローラーの状態リセット
+        if(this.hands) {
+          this.hands.forEach(h => { h.activeTarget = null; h.isHovering = false; h.hasPrevPos = false; });
+        }
       },
 
       resetGame: function() {
         this.isPlaying = false;
-        this.startButton.setAttribute('visible', 'true');
-        this.startButton.classList.add('clickable');
-        
-        // 【修正】モードボタンを再表示
-        this.modeButton.setAttribute('visible', 'true');
-        this.modeButton.classList.add('clickable');
+        this.startButton.setAttribute('visible', 'true'); this.startButton.classList.add('clickable');
+        this.modeButton.setAttribute('visible', 'true'); this.modeButton.classList.add('clickable');
+        this.resetButton.setAttribute('visible', 'false'); this.resetButton.classList.remove('clickable');
 
-        this.resetButton.setAttribute('visible', 'false');
-        this.resetButton.classList.remove('clickable');
+        this.uiMessage.setAttribute('value', 'PRESS START'); this.uiMessage.setAttribute('color', '#AAA');
+        this.uiScore.setAttribute('value', 'Score: 0'); this.uiLevel.setAttribute('value', 'Level: 1');
 
-        this.uiMessage.setAttribute('value', 'PRESS START');
-        this.uiMessage.setAttribute('color', '#AAA');
-        this.uiScore.setAttribute('value', 'Score: 0');
-        this.uiLevel.setAttribute('value', 'Level: 1');
-
-        this.targets.forEach(t => {
-          t.el.setAttribute('visible', 'false');
-          t.hitbox.classList.remove('clickable');
-        });
+        this.targets.forEach(t => { t.el.setAttribute('visible', 'false'); t.hitbox.classList.remove('clickable'); });
+        this.targets.forEach(t => t.landolt.object3D.scale.set(1, 1, 1));
       },
 
       randomizeDir: function(tData) {
@@ -293,8 +261,7 @@
           this.targets.forEach(t => { t.isYellow = false; t.stand.setAttribute('color', '#444'); });
           if(!isCombo) { tData.isYellow = true; tData.stand.setAttribute('color', '#aaaa00'); }
 
-          this.uiMessage.setAttribute('value', isCombo ? 'COMBO!!' : 'HIT!');
-          this.uiMessage.setAttribute('color', isCombo ? '#FFD700' : '#00FF00');
+          this.uiMessage.setAttribute('value', isCombo ? 'COMBO!!' : 'HIT!'); this.uiMessage.setAttribute('color', isCombo ? '#FFD700' : '#00FF00');
           this.playSound(isCombo ? 'combo' : 'hit');
 
           let sorted = [...this.targets].sort((a,b) => b.z - a.z);
@@ -302,14 +269,10 @@
             let distanceScore = Math.floor(Math.abs(tData.z));
             this.score += isCombo ? distanceScore * 2 : distanceScore;
           }
-
-          this.hitCount++;
-          if(this.hitCount >= 10) { this.level++; this.hitCount = 0; }
+          this.hitCount++; if(this.hitCount >= 10) { this.level++; this.hitCount = 0; }
         } else {
-          tData.isYellow = false;
-          tData.stand.setAttribute('color', '#444');
-          this.uiMessage.setAttribute('value', 'MISS...');
-          this.uiMessage.setAttribute('color', '#FF0000');
+          tData.isYellow = false; tData.stand.setAttribute('color', '#444');
+          this.uiMessage.setAttribute('value', 'MISS...'); this.uiMessage.setAttribute('color', '#FF0000');
           this.playSound('miss');
         }
         
@@ -324,35 +287,59 @@
 
       tick: function (time, timeDelta) {
         if (!this.isPlaying) return;
+        let timeNow = performance.now();
 
-        // フリック操作判定
+        // 【大改修】空間座標(Position)を利用した高精度スワイプ判定
         if(this.hands) {
           this.hands.forEach(hand => {
-            if(hand.isDragging && hand.lockedTarget) { // 【修正】ロックした的を使用する
-              let cx = hand.object3D.rotation.x; 
-              let cy = hand.object3D.rotation.y; 
-              
-              let dx = cy - hand.dragStartRot.y;
-              let dy = cx - hand.dragStartRot.x;
-              
-              if (dx > Math.PI) dx -= Math.PI*2; if (dx < -Math.PI) dx += Math.PI*2;
-              if (dy > Math.PI) dy -= Math.PI*2; if (dy < -Math.PI) dy += Math.PI*2;
+            // エイムが外れても、250ms(0.25秒)以内ならターゲットをロックし続ける（コヨーテタイム）
+            if (!hand.isHovering && (timeNow - hand.targetLostTime > 250)) {
+              hand.activeTarget = null;
+            }
 
-              let threshold = 0.2; 
-              if(Math.abs(dx) > threshold || Math.abs(dy) > threshold) {
+            // コントローラーの現在の空間座標を取得
+            hand.object3D.getWorldPosition(hand.worldPos);
+
+            if (!hand.hasPrevPos) {
+              hand.prevPos.copy(hand.worldPos);
+              hand.hasPrevPos = true;
+              return;
+            }
+
+            let tData = hand.activeTarget;
+            
+            // XとYの移動距離を計算（腕の振り）
+            let dx = hand.worldPos.x - hand.prevPos.x;
+            let dy = hand.worldPos.y - hand.prevPos.y;
+            let speed = Math.sqrt(dx*dx + dy*dy); // 空間の移動速度
+
+            let threshold = 0.015; // 振りと判定する閾値（約1m/s）
+            let swingCoolDown = 250; // 連続入力防止(ms)
+
+            if (tData) {
+              if (!hand.swinging && speed > threshold && (time - hand.lastSwingTime > swingCoolDown)) {
+                // 振りの方向を判定
                 let inputDir = -1;
-                if(Math.abs(dx) > Math.abs(dy)) {
-                  inputDir = dx < 0 ? 1 : 3; 
+                if (Math.abs(dx) > Math.abs(dy)) {
+                  inputDir = dx > 0 ? 1 : 3; // 右(1) / 左(3)
                 } else {
-                  inputDir = dy > 0 ? 0 : 2; 
+                  inputDir = dy > 0 ? 0 : 2; // 上(0) / 下(2)
                 }
                 
-                // ロックした的を押し返す
-                this.checkHit(inputDir, hand.lockedTarget);
-                hand.isDragging = false; 
-                hand.lockedTarget = null;
+                this.checkHit(inputDir, tData);
+                hand.swinging = true;
+                hand.lastSwingTime = time;
+                hand.activeTarget = null; // 斬った直後にターゲットをクリアして連打を防ぐ
               }
             }
+            
+            // 振りが遅くなったらフラグをリセット
+            if (speed < threshold * 0.5) {
+              hand.swinging = false;
+            }
+
+            // 次のフレームのために座標を記録
+            hand.prevPos.copy(hand.worldPos);
           });
         }
 
@@ -383,7 +370,8 @@
   </script>
 </head>
 <body style="margin: 0; overflow: hidden; background-color: #000;">
-  <a-scene game-manager background="color: #050510">
+  <a-scene game-manager background="color: #0b0b25">
+    
     <a-entity position="0 0 0">
       <a-camera position="0 1.6 0">
         <a-entity id="mouse-cursor" cursor="rayOrigin: mouse; fuse: false" raycaster="objects: .clickable"></a-entity>
@@ -393,7 +381,7 @@
     </a-entity>
 
     <a-entity id="controls-panel" position="-3.5 2.5 -3" rotation="0 25 0" geometry="primitive: plane; width: 2.5; height: 2.2" material="color: #111; opacity: 0.9; side: double">
-      <a-text value="[ HOW TO PLAY ]\n\n- PC -\nAim: Mouse\nInput: Arrow Keys\n\n- VR -\nAim: Laser Pointer\nInput: Thumbstick\n    OR\nPull Trigger & Swipe\n\n1. Aim & Input Direction\n2. Push it back!" 
+      <a-text value="[ HOW TO PLAY ]\n\n- PC -\nAim: Mouse\nInput: Arrow Keys\n\n- VR -\nAim: Laser Pointer\nInput: Thumbstick\n    OR\nAim & Swing (like Beat Saber)\n\n1. Aim & Input Direction\n2. Push it back!" 
               position="-1.1 0.8 0.01" align="left" color="#0ff" width="2.3" line-height="55"></a-text>
     </a-entity>
 
@@ -408,7 +396,7 @@
     </a-entity>
 
     <a-entity id="mode-button" class="clickable" position="0 2.3 -3" geometry="primitive: plane; width: 2.0; height: 0.4" material="color: #607d8b">
-      <a-text value="TRAINING: OFF" align="center" position="0 0 0.01" width="4" color="#FFF"></a-text>
+      <a-text value="SIZE VAR: OFF" align="center" position="0 0 0.01" width="4" color="#FFF"></a-text>
     </a-entity>
 
     <a-entity id="reset-button" position="3.5 1.5 -3" rotation="0 -25 0" geometry="primitive: plane; width: 1.5; height: 0.6" material="color: #f44336" visible="false">
@@ -420,6 +408,21 @@
     <a-entity position="-2 0.02 -15" rotation="-90 0 0" geometry="primitive: plane; width: 0.1; height: 32" material="color: #0ff; opacity: 0.5"></a-entity>
     <a-entity position="0 0.02 -15" rotation="-90 0 0" geometry="primitive: plane; width: 0.1; height: 32" material="color: #0ff; opacity: 0.5"></a-entity>
     <a-entity position="2 0.02 -15" rotation="-90 0 0" geometry="primitive: plane; width: 0.1; height: 32" material="color: #0ff; opacity: 0.5"></a-entity>
+
+    <a-entity position="0 2.5 -40" geometry="primitive: plane; width: 20; height: 10" material="color: #0ff; wireframe: true; transparent: true; opacity: 0.2"></a-entity>
+    <a-entity position="0 2.5 -40" rotation="0 0 45" geometry="primitive: plane; width: 15; height: 15" material="color: #0ff; wireframe: true; transparent: true; opacity: 0.1"></a-entity>
+
+    <a-entity position="-5 1.5 -5" geometry="primitive: cylinder; radius: 0.2; height: 3" material="color: #0ff; opacity: 0.3"></a-entity>
+    <a-entity position="-5 1.5 -15" geometry="primitive: cylinder; radius: 0.2; height: 3" material="color: #0ff; opacity: 0.3"></a-entity>
+    <a-entity position="-5 1.5 -25" geometry="primitive: cylinder; radius: 0.2; height: 3" material="color: #0ff; opacity: 0.3"></a-entity>
+    <a-entity position="-5 1.5 -35" geometry="primitive: cylinder; radius: 0.2; height: 3" material="color: #0ff; opacity: 0.3"></a-entity>
+    <a-entity position="5 1.5 -5" geometry="primitive: cylinder; radius: 0.2; height: 3" material="color: #0ff; opacity: 0.3"></a-entity>
+    <a-entity position="5 1.5 -15" geometry="primitive: cylinder; radius: 0.2; height: 3" material="color: #0ff; opacity: 0.3"></a-entity>
+    <a-entity position="5 1.5 -25" geometry="primitive: cylinder; radius: 0.2; height: 3" material="color: #0ff; opacity: 0.3"></a-entity>
+    <a-entity position="5 1.5 -35" geometry="primitive: cylinder; radius: 0.2; height: 3" material="color: #0ff; opacity: 0.3"></a-entity>
+
+    <a-entity position="0 6 -35" geometry="primitive: box; width: 5; height: 5; depth: 5" material="color: #0ff; opacity: 0.2; wireframe: true"
+              animation="property: rotation; to: 360 360 360; dur: 20000; loop: true; easing: linear"></a-entity>
 
     <a-light type="ambient" color="#444"></a-light>
     <a-light type="point" intensity="0.8" color="#0ff" position="0 4 0"></a-light>
