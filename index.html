@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>VR視力回復ゲーム (WebXR版 - Beat Recovery 極限判定+視認性向上)</title>
+  <title>VR</title>
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script>
     AFRAME.registerComponent('data-particles', {
@@ -14,7 +14,6 @@
           let z = -2 - Math.random() * 35;    
           p.setAttribute('position', `${x} ${y} ${z}`);
           p.setAttribute('scale', '0.08 0.08 0.08');
-          // 昼間の背景に合わせてパーティクルの色も白や水色に
           let color = Math.random() > 0.5 ? '#ffffff' : '#88ddff';
           p.setAttribute('material', `color: ${color}; shader: flat; transparent: true; opacity: 0.6`);
           p.setAttribute('animation', `property: position; to: ${x} ${y+2} ${z}; dur: ${3000+Math.random()*4000}; loop: true; dir: alternate; easing: easeInOutSine`);
@@ -42,25 +41,22 @@
           
           this.startButton = document.querySelector('#start-button');
           this.resetButton = document.querySelector('#reset-button');
-          this.modeButton = document.querySelector('#mode-button'); // 【追加】モード切替ボタン
+          this.modeButton = document.querySelector('#mode-button'); 
 
-          // --- ボタンイベント ---
           this.startButton.addEventListener('click', () => this.startGame());
           this.resetButton.addEventListener('click', () => this.resetGame());
           
           this.modeButton.addEventListener('click', () => {
-            if (this.isPlaying) return; // 念のためプレイ中は無効化
+            if (this.isPlaying) return; 
             this.trainingMode = !this.trainingMode;
             this.modeButton.setAttribute('material', 'color', this.trainingMode ? '#ff9800' : '#607d8b');
             this.modeButton.querySelector('a-text').setAttribute('value', this.trainingMode ? 'SIZE VAR: ON' : 'SIZE VAR: OFF');
             
-            // 【変更】トレーニングモードオフ時は、今の基準サイズ（半分になったサイズ）に戻す
             if (!this.trainingMode) {
               this.targets.forEach(t => t.landoltGroup.object3D.scale.set(0.35, 0.35, 0.35));
             }
           });
 
-          // ボタンホバー演出
           const setHover = (btn, colorNormal, colorHover) => {
             btn.addEventListener('mouseenter', () => btn.setAttribute('material', 'color', colorHover));
             btn.addEventListener('mouseleave', () => btn.setAttribute('material', 'color', colorNormal));
@@ -75,44 +71,37 @@
             let el = document.createElement('a-entity');
             el.setAttribute('visible', 'false');
             
-            // 【激甘判定】見えない当たり判定を2倍以上に巨大化
+            // 【バグ修正1】横幅を 1.8m に縮小し、隣のレーンとの干渉を防止
             let hitbox = document.createElement('a-box');
-            hitbox.setAttribute('width', '2.5'); 
+            hitbox.setAttribute('width', '1.8'); 
             hitbox.setAttribute('height', '2.5'); 
             hitbox.setAttribute('depth', '0.5');
-            // 透明にして見た目には影響させない
             hitbox.setAttribute('material', 'opacity: 0.0; transparent: true; depthWrite: false');
             hitbox.setAttribute('class', 'hitbox'); 
             
-            // ランドルト環と背景板をまとめるグループ
             let landoltGroup = document.createElement('a-entity');
-            // 【変更】基準スケールを以前の半分に（0.7 -> 0.35）
             landoltGroup.setAttribute('scale', '0.35 0.35 0.35'); 
             
-            // 環の背後に置く「不透明の黒い円（下地）」
+            // 【ご要望】背景を4倍に巨大化（radius: 1.04）
             let bgCircle = document.createElement('a-circle');
-            // 【変更】半径を4倍に（0.26 -> 1.04）
             bgCircle.setAttribute('radius', '1.04'); 
-            bgCircle.setAttribute('color', '#111111'); // ほぼ黒
-            bgCircle.setAttribute('material', 'shader: flat; depthTest: true'); // 深度テスト有効
-            bgCircle.setAttribute('position', '0 0 -0.05'); // 環のほんの少し後ろ
+            // 【ご要望】基本色を暗い色（黒）に設定
+            bgCircle.setAttribute('color', '#111111'); 
+            // 【バグ修正2＆3】壁化を防ぐ半透明(0.85)と、描画順序の狂いを防ぐ(depthWrite: false)を追加
+            bgCircle.setAttribute('material', 'shader: flat; transparent: true; opacity: 0.85; depthTest: true; depthWrite: false'); 
+            bgCircle.setAttribute('position', '0 0 -0.05'); 
 
             let landolt = document.createElement('a-ring');
-            // 【変更】内径・外径を以前の半分に（0.3/0.45 -> 0.15/0.225）
             landolt.setAttribute('radius-inner', '0.15'); landolt.setAttribute('radius-outer', '0.225');
-            // 昼背景に合わせて、環の色を真っ白に
             landolt.setAttribute('color', '#ffffff');
             landolt.setAttribute('material', 'shader: flat'); 
             landolt.setAttribute('theta-start', '30'); landolt.setAttribute('theta-length', '300');
             
             let stand = document.createElement('a-cylinder');
             stand.setAttribute('radius', '0.03'); stand.setAttribute('height', '1.5');
-            // 【変更】棒の位置を環より後ろ（Z=-0.15）にする
             stand.setAttribute('position', '0 -0.75 -0.15'); 
-            // 昼背景に合わせて、棒の色をグレーに
             stand.setAttribute('color', '#555555');
 
-            // グループに背景円と環を追加
             landoltGroup.appendChild(bgCircle);
             landoltGroup.appendChild(landolt);
 
@@ -139,7 +128,7 @@
                 let hand = document.querySelector('#' + cursorId);
                 if (hand) { hand.activeTarget = targetData; hand.isHovering = true; }
               }
-              // 【視覚改善・変更】環の背景（下地）を暗い Teel（シアン）に光らせる
+              // 【ご要望】ホバー時の色を暗いシアン（Teal）に変更
               bgCircle.setAttribute('color', '#008080');
             });
 
@@ -158,7 +147,7 @@
               }
               
               if(targetData.hoveredBy.size === 0) {
-                // 【変更】ホバーが外れたら元の色（コンボ中なら暗い Olive、通常は黒）に戻す
+                // 【ご要望】コンボ中は暗いオリーブ、通常は黒に戻す
                 bgCircle.setAttribute('color', targetData.isYellow ? '#808000' : '#111111');
               }
             });
@@ -173,14 +162,12 @@
             if(inputDir !== -1) this.checkHit(inputDir, tData);
           });
 
-          // VRコントローラー入力 (そのまま維持)
           this.hands = document.querySelectorAll('.vr-controller');
           this.hands.forEach(hand => {
-            hand.prevRot = null; // 前フレームの回転を記録
-            hand.swinging = false; // 振りの状態管理
-            hand.lastSwingTime = 0; // 連続入力防止
+            hand.worldPos = new THREE.Vector3(); hand.prevPos = new THREE.Vector3(); hand.hasPrevPos = false;
+            hand.activeTarget = null; hand.isHovering = false; hand.targetLostTime = 0;
+            hand.swinging = false; hand.lastSwingTime = 0;
 
-            // スティック入力は残す
             hand.addEventListener('thumbstickmoved', (e) => {
               let tData = hand.activeTarget;
               if(!this.isPlaying || !tData) return;
@@ -201,7 +188,6 @@
       spawnEffect: function(x, y, z, isCombo) {
         let ring = document.createElement('a-ring');
         ring.setAttribute('radius-inner', '0.5'); ring.setAttribute('radius-outer', '0.8');
-        // 昼背景に負けないよう、エフェクト色を少し濃く調整
         ring.setAttribute('color', isCombo ? '#FFaa00' : '#00aaff');
         ring.setAttribute('position', `${x} ${y} ${z}`);
         ring.setAttribute('material', 'shader: flat; transparent: true; opacity: 1; side: double');
@@ -211,7 +197,6 @@
         setTimeout(() => { if(ring.parentNode) ring.parentNode.removeChild(ring); }, 300);
       },
 
-      // 合成音による効果音生成 (そのまま)
       initAudio: function() {
         if (!this.audioCtx) {
           const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -257,7 +242,6 @@
           t.z = -3 - Math.random() * 5; t.el.object3D.position.set(t.x, 1.5, t.z);
           t.el.setAttribute('visible', 'true'); t.hitbox.classList.add('clickable');
           this.randomizeDir(t); t.isYellow = false; t.stand.setAttribute('color', '#555');
-          // 【変更】開始時は黒にリセット
           t.bgCircle.setAttribute('color', '#111111');
           t.hoveredBy.clear();
         });
@@ -277,21 +261,18 @@
         this.uiMessage.setAttribute('value', 'PRESS START'); this.uiMessage.setAttribute('color', '#333');
         this.uiScore.setAttribute('value', 'Score: 0'); this.uiLevel.setAttribute('value', 'Level: 1');
 
-        this.targets.forEach(t => { t.el.setAttribute('visible', 'false'); t.hitbox.classList.remove('clickable'); });
-        
-        // フォグ削除
-        this.el.sceneEl.removeAttribute('fog');
-        // 【変更】スケールを新しい基準サイズ（以前の半分）に戻す
-        this.targets.forEach(t => t.landoltGroup.object3D.scale.set(0.35, 0.35, 0.35));
-        // 【追加】リセット時は黒にリセット
-        this.targets.forEach(t => t.bgCircle.setAttribute('color', '#111111'));
+        this.targets.forEach(t => { 
+          t.el.setAttribute('visible', 'false'); 
+          t.hitbox.classList.remove('clickable'); 
+          t.landoltGroup.object3D.scale.set(0.35, 0.35, 0.35);
+          t.bgCircle.setAttribute('color', '#111111');
+        });
         this.handTargets['mouse-cursor'] = null;
       },
 
       randomizeDir: function(tData) {
         tData.dir = Math.floor(Math.random() * 4);
         let rotZ = tData.dir === 0 ? 90 : tData.dir === 1 ? 0 : tData.dir === 2 ? 270 : 180;
-        // 回転させるのは環本体のみ
         tData.landolt.setAttribute('rotation', `0 0 ${rotZ}`);
       },
 
@@ -304,11 +285,16 @@
           tData.z = Math.max(-30, tData.z - pushBack);
           this.randomizeDir(tData);
 
-          this.targets.forEach(t => { t.isYellow = false; t.stand.setAttribute('color', '#555'); });
+          this.targets.forEach(t => { 
+            t.isYellow = false; 
+            t.stand.setAttribute('color', '#555'); 
+            if(t.hoveredBy.size === 0) t.bgCircle.setAttribute('color', '#111111');
+          });
+          
           if(!isCombo) { 
             tData.isYellow = true; 
             tData.stand.setAttribute('color', '#ffaa00'); 
-            // 【変更】コンボ色を暗い Oliveに
+            // 【ご要望】コンボ中の色を暗いオリーブ色に
             if(tData.hoveredBy.size === 0) tData.bgCircle.setAttribute('color', '#808000');
           }
 
@@ -323,6 +309,7 @@
           this.hitCount++; if(this.hitCount >= 10) { this.level++; this.hitCount = 0; }
         } else {
           tData.isYellow = false; tData.stand.setAttribute('color', '#555');
+          if(tData.hoveredBy.size === 0) tData.bgCircle.setAttribute('color', '#111111');
           this.uiMessage.setAttribute('value', 'MISS...'); this.uiMessage.setAttribute('color', '#FF0000');
           this.playSound('miss');
         }
@@ -340,10 +327,8 @@
         if (!this.isPlaying) return;
         let timeNow = performance.now();
 
-        // トリガー不要、振るだけスワイプ操作判定 (維持)
         if(this.hands) {
           this.hands.forEach(hand => {
-            // 【変更】ロックオン猶予時間を0.4秒（400ms）に拡大
             if (!hand.isHovering && (timeNow - hand.targetLostTime > 400)) {
               hand.activeTarget = null;
             }
@@ -351,37 +336,31 @@
             hand.object3D.getWorldPosition(hand.worldPos);
             if (!hand.hasPrevPos) { hand.prevPos.copy(hand.worldPos); hand.hasPrevPos = true; return; }
 
-            let tData = hand.activeTarget; // ロックオン中の的を取得
+            let tData = hand.activeTarget; 
             let dx = hand.worldPos.x - hand.prevPos.x;
             let dy = hand.worldPos.y - hand.prevPos.y;
             let speed = Math.sqrt(dx*dx + dy*dy); 
 
-            let threshold = 0.008; // 振りの速さの閾値 (そのまま)
-            let swingCoolDown = 150; // クールダウン短縮 (そのまま)
+            let threshold = 0.008; 
+            let swingCoolDown = 150; 
 
             if (tData) {
               if (!hand.swinging && speed > threshold && (time - hand.lastSwingTime > swingCoolDown)) {
                 let inputDir = -1;
                 if(Math.abs(dx) > Math.abs(dy)) {
-                  // 上下振り
-                  inputDir = dx > 0 ? 0 : 2; // 上(0) / 下(2)
+                  inputDir = dx > 0 ? 1 : 3; 
                 } else {
-                  // 左右振り
-                  inputDir = dy < 0 ? 1 : 3; // 右(1) / 左(3)
+                  inputDir = dy > 0 ? 0 : 2; 
                 }
                 
-                // 的を押し返す
                 this.checkHit(inputDir, tData);
-                hand.swinging = true; // 振りの状態管理
-                hand.lastSwingTime = time; // 入力時間を更新
-                
-                // レーザーが当たっていれば、何度でも斬れます。
+                hand.swinging = true; 
+                hand.lastSwingTime = time; 
               }
             }
             if (speed < threshold * 0.5) {
               hand.swinging = false;
             }
-            // 前フレームの座標を更新
             hand.prevPos.copy(hand.worldPos);
           });
         }
@@ -414,7 +393,6 @@
 </head>
 <body style="margin: 0; overflow: hidden; background-color: #F8E0A0;">
   <a-scene game-manager data-particles background="color: #F8E0A0">
-    
     <a-entity position="0 0 0">
       <a-camera position="0 1.6 0">
         <a-entity id="mouse-cursor" cursor="rayOrigin: mouse; fuse: false" raycaster="objects: .clickable"></a-entity>
@@ -437,11 +415,9 @@
     <a-entity id="start-button" class="clickable" position="0 1.5 -3" geometry="primitive: plane; width: 1.5; height: 0.6" material="color: #4CAF50">
       <a-text value="START" align="center" position="0 0 0.01" width="5" color="#FFF"></a-text>
     </a-entity>
-
     <a-entity id="mode-button" class="clickable" position="0 2.3 -3" geometry="primitive: plane; width: 2.0; height: 0.4" material="color: #607d8b">
       <a-text value="SIZE VAR: OFF" align="center" position="0 0 0.01" width="4" color="#FFF"></a-text>
     </a-entity>
-
     <a-entity id="reset-button" position="3.5 1.5 -3" rotation="0 -25 0" geometry="primitive: plane; width: 1.5; height: 0.6" material="color: #f44336" visible="false">
       <a-text value="RESET" align="center" position="0 0 0.01" width="5" color="#FFF"></a-text>
     </a-entity>
