@@ -2,30 +2,26 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>VR視力回復ゲーム (WebXR版 - Synthwave Edition)</title>
+  <title>VR視力回復ゲーム (WebXR版 - Daylight Clarity 修正版)</title>
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script>
-    // 【新規追加】空間に浮遊する光の粒子（パーティクル）を自動生成するコンポーネント
     AFRAME.registerComponent('data-particles', {
       init: function() {
         for(let i=0; i<40; i++) {
           let p = document.createElement('a-box');
-          let x = (Math.random() - 0.5) * 30; // 左右の広がり
-          let y = Math.random() * 8;          // 高さ
-          let z = -2 - Math.random() * 35;    // 奥行き
+          let x = (Math.random() - 0.5) * 30; 
+          let y = Math.random() * 8;          
+          let z = -2 - Math.random() * 35;    
           p.setAttribute('position', `${x} ${y} ${z}`);
           p.setAttribute('scale', '0.08 0.08 0.08');
-          // ピンクとシアンをランダムに割り当て
-          let color = Math.random() > 0.5 ? '#00ffff' : '#ff00ff';
+          let color = Math.random() > 0.5 ? '#ffffff' : '#88ddff';
           p.setAttribute('material', `color: ${color}; shader: flat; transparent: true; opacity: 0.6`);
-          // ゆっくり上下に漂うアニメーション
           p.setAttribute('animation', `property: position; to: ${x} ${y+2} ${z}; dur: ${3000+Math.random()*4000}; loop: true; dir: alternate; easing: easeInOutSine`);
           this.el.appendChild(p);
         }
       }
     });
 
-    // メインのゲームロジック（前回の極限チューニング版のまま）
     AFRAME.registerComponent('game-manager', {
       init: function () {
         this.isPlaying = false;
@@ -54,7 +50,9 @@
             this.trainingMode = !this.trainingMode;
             this.modeButton.setAttribute('material', 'color', this.trainingMode ? '#ff9800' : '#607d8b');
             this.modeButton.querySelector('a-text').setAttribute('value', this.trainingMode ? 'SIZE VAR: ON' : 'SIZE VAR: OFF');
-            if (!this.trainingMode) this.targets.forEach(t => t.landolt.object3D.scale.set(1, 1, 1));
+            if (!this.trainingMode) {
+              this.targets.forEach(t => t.landoltGroup.object3D.scale.set(0.7, 0.7, 0.7));
+            }
           });
 
           const setHover = (btn, colorNormal, colorHover) => {
@@ -76,20 +74,38 @@
             hitbox.setAttribute('material', 'opacity: 0.1; color: #fff; transparent: true');
             hitbox.setAttribute('class', 'hitbox'); 
             
+            let landoltGroup = document.createElement('a-entity');
+            landoltGroup.setAttribute('scale', '0.7 0.7 0.7'); 
+            
+            let bgCircle = document.createElement('a-circle');
+            // 【修正2】半径を0.52に拡大し、黒いアウトラインをくっきり表示
+            bgCircle.setAttribute('radius', '0.52'); 
+            bgCircle.setAttribute('color', '#111111'); 
+            bgCircle.setAttribute('material', 'shader: flat; depthTest: true'); 
+            // 【修正1】Z-Fightingを防ぐため隙間を -0.05 に拡張
+            bgCircle.setAttribute('position', '0 0 -0.05'); 
+
             let landolt = document.createElement('a-ring');
             landolt.setAttribute('radius-inner', '0.3'); landolt.setAttribute('radius-outer', '0.45');
             landolt.setAttribute('color', '#ffffff');
+            landolt.setAttribute('material', 'shader: flat'); 
             landolt.setAttribute('theta-start', '30'); landolt.setAttribute('theta-length', '300');
             
             let stand = document.createElement('a-cylinder');
             stand.setAttribute('radius', '0.03'); stand.setAttribute('height', '1.5');
-            stand.setAttribute('position', '0 -0.75 0'); stand.setAttribute('color', '#444');
+            stand.setAttribute('position', '0 -0.75 0'); 
+            stand.setAttribute('color', '#555555');
 
-            el.appendChild(hitbox); el.appendChild(landolt); el.appendChild(stand);
+            landoltGroup.appendChild(bgCircle);
+            landoltGroup.appendChild(landolt);
+
+            el.appendChild(hitbox); 
+            el.appendChild(landoltGroup); 
+            el.appendChild(stand);
             this.el.sceneEl.appendChild(el);
 
             let targetData = { 
-              el: el, landolt: landolt, stand: stand, hitbox: hitbox,
+              el: el, landoltGroup: landoltGroup, landolt: landolt, stand: stand, hitbox: hitbox,
               lane: i, x: laneX[i], z: -5, dir: 0, isYellow: false
             };
             this.targets.push(targetData);
@@ -103,7 +119,7 @@
                 let hand = document.querySelector('#' + cursorId);
                 if (hand) { hand.activeTarget = targetData; hand.isHovering = true; }
               }
-              hitbox.setAttribute('material', 'color: #00ffff; opacity: 0.3');
+              hitbox.setAttribute('material', 'color: #00dddd; opacity: 0.4');
             });
 
             hitbox.addEventListener('mouseleave', (e) => {
@@ -155,7 +171,7 @@
       spawnEffect: function(x, y, z, isCombo) {
         let ring = document.createElement('a-ring');
         ring.setAttribute('radius-inner', '0.5'); ring.setAttribute('radius-outer', '0.8');
-        ring.setAttribute('color', isCombo ? '#FFD700' : '#00FFFF');
+        ring.setAttribute('color', isCombo ? '#FFaa00' : '#00aaff');
         ring.setAttribute('position', `${x} ${y} ${z}`);
         ring.setAttribute('material', 'shader: flat; transparent: true; opacity: 1; side: double');
         ring.setAttribute('animation__scale', 'property: scale; to: 3 3 3; dur: 300; easing: easeOutQuad');
@@ -198,17 +214,20 @@
         this.initAudio(); 
         this.isPlaying = true; this.score = 0; this.level = 1; this.hitCount = 0; this.penaltyTimer = 0;
         
+        // 【修正3】マウスやコントローラーのゴーストホバー状態を強制クリア
+        this.handTargets['mouse-cursor'] = null;
+
         this.startButton.setAttribute('visible', 'false'); this.startButton.classList.remove('clickable');
         this.modeButton.setAttribute('visible', 'false'); this.modeButton.classList.remove('clickable');
         this.resetButton.setAttribute('visible', 'true'); this.resetButton.classList.add('clickable');
 
-        this.uiMessage.setAttribute('value', 'GAME START!'); this.uiMessage.setAttribute('color', '#00FF00');
+        this.uiMessage.setAttribute('value', 'GAME START!'); this.uiMessage.setAttribute('color', '#00aa00');
         this.updateUI();
 
         this.targets.forEach((t) => {
           t.z = -3 - Math.random() * 5; t.el.object3D.position.set(t.x, 1.5, t.z);
           t.el.setAttribute('visible', 'true'); t.hitbox.classList.add('clickable');
-          this.randomizeDir(t); t.isYellow = false; t.stand.setAttribute('color', '#444');
+          this.randomizeDir(t); t.isYellow = false; t.stand.setAttribute('color', '#555');
           t.hitbox.setAttribute('material', 'color: #fff; opacity: 0.1');
         });
 
@@ -219,15 +238,19 @@
 
       resetGame: function() {
         this.isPlaying = false;
+        
+        // 【修正3】リセット時にも念のため強制クリア
+        this.handTargets['mouse-cursor'] = null;
+
         this.startButton.setAttribute('visible', 'true'); this.startButton.classList.add('clickable');
         this.modeButton.setAttribute('visible', 'true'); this.modeButton.classList.add('clickable');
         this.resetButton.setAttribute('visible', 'false'); this.resetButton.classList.remove('clickable');
 
-        this.uiMessage.setAttribute('value', 'PRESS START'); this.uiMessage.setAttribute('color', '#AAA');
+        this.uiMessage.setAttribute('value', 'PRESS START'); this.uiMessage.setAttribute('color', '#333');
         this.uiScore.setAttribute('value', 'Score: 0'); this.uiLevel.setAttribute('value', 'Level: 1');
 
         this.targets.forEach(t => { t.el.setAttribute('visible', 'false'); t.hitbox.classList.remove('clickable'); });
-        this.targets.forEach(t => t.landolt.object3D.scale.set(1, 1, 1));
+        this.targets.forEach(t => t.landoltGroup.object3D.scale.set(0.7, 0.7, 0.7));
       },
 
       randomizeDir: function(tData) {
@@ -245,10 +268,10 @@
           tData.z = Math.max(-30, tData.z - pushBack);
           this.randomizeDir(tData);
 
-          this.targets.forEach(t => { t.isYellow = false; t.stand.setAttribute('color', '#444'); });
-          if(!isCombo) { tData.isYellow = true; tData.stand.setAttribute('color', '#aaaa00'); }
+          this.targets.forEach(t => { t.isYellow = false; t.stand.setAttribute('color', '#555'); });
+          if(!isCombo) { tData.isYellow = true; tData.stand.setAttribute('color', '#ffaa00'); }
 
-          this.uiMessage.setAttribute('value', isCombo ? 'COMBO!!' : 'HIT!'); this.uiMessage.setAttribute('color', isCombo ? '#FFD700' : '#00FF00');
+          this.uiMessage.setAttribute('value', isCombo ? 'COMBO!!' : 'HIT!'); this.uiMessage.setAttribute('color', isCombo ? '#ffaa00' : '#00aa00');
           this.playSound(isCombo ? 'combo' : 'hit');
 
           let sorted = [...this.targets].sort((a,b) => b.z - a.z);
@@ -258,7 +281,7 @@
           }
           this.hitCount++; if(this.hitCount >= 10) { this.level++; this.hitCount = 0; }
         } else {
-          tData.isYellow = false; tData.stand.setAttribute('color', '#444');
+          tData.isYellow = false; tData.stand.setAttribute('color', '#555');
           this.uiMessage.setAttribute('value', 'MISS...'); this.uiMessage.setAttribute('color', '#FF0000');
           this.playSound('miss');
         }
@@ -314,8 +337,8 @@
           t.el.object3D.position.z = t.z;
 
           if (this.trainingMode) {
-            let s = 0.5 + 0.5 * (1.0 - Math.abs(t.z) / 30.0);
-            t.landolt.object3D.scale.set(s, s, s);
+            let s = 0.35 + 0.35 * (1.0 - Math.abs(t.z) / 30.0);
+            t.landoltGroup.object3D.scale.set(s, s, s);
           }
         });
 
@@ -331,8 +354,8 @@
     });
   </script>
 </head>
-<body style="margin: 0; overflow: hidden; background-color: #000;">
-  <a-scene game-manager data-particles background="color: #05021a">
+<body style="margin: 0; overflow: hidden; background-color: #87CEEB;">
+  <a-scene game-manager data-particles background="color: #87CEEB">
     
     <a-entity position="0 0 0">
       <a-camera position="0 1.6 0">
@@ -342,15 +365,15 @@
       <a-entity id="right-hand" class="vr-controller" laser-controls="hand: right" raycaster="objects: .clickable; showLine: true"></a-entity>
     </a-entity>
 
-    <a-entity id="controls-panel" position="-3.5 2.5 -3" rotation="0 25 0" geometry="primitive: plane; width: 2.5; height: 2.2" material="color: #111; opacity: 0.9; side: double">
+    <a-entity id="controls-panel" position="-3.5 2.5 -3" rotation="0 25 0" geometry="primitive: plane; width: 2.5; height: 2.2" material="color: #333; opacity: 0.85; side: double">
       <a-text value="[ HOW TO PLAY ]\n\n- PC -\nAim: Mouse\nInput: Arrow Keys\n\n- VR -\nAim: Laser Pointer\nInput: Thumbstick\n    OR\nAim & Swing (like Beat Saber)\n\n1. Aim & Input Direction\n2. Push it back!" 
-              position="-1.1 0.8 0.01" align="left" color="#0ff" width="2.3" line-height="55"></a-text>
+              position="-1.1 0.8 0.01" align="left" color="#eee" width="2.3" line-height="55"></a-text>
     </a-entity>
 
     <a-entity id="world-ui" position="0 3.5 -4">
-      <a-text id="ui-score" value="Score: 0" position="-1.5 0 0" color="#FFD700" width="5"></a-text>
-      <a-text id="ui-level" value="Level: 1" position="1.5 0 0" color="#FFF" width="5"></a-text>
-      <a-text id="ui-message" value="PRESS START" position="0 -0.5 0" align="center" color="#AAA" width="6"></a-text>
+      <a-text id="ui-score" value="Score: 0" position="-1.5 0 0" color="#e65100" width="5"></a-text>
+      <a-text id="ui-level" value="Level: 1" position="1.5 0 0" color="#333" width="5"></a-text>
+      <a-text id="ui-message" value="PRESS START" position="0 -0.5 0" align="center" color="#333" width="6"></a-text>
     </a-entity>
 
     <a-entity id="start-button" class="clickable" position="0 1.5 -3" geometry="primitive: plane; width: 1.5; height: 0.6" material="color: #4CAF50">
@@ -367,29 +390,28 @@
 
     <a-entity rotation="-90 0 0" position="0 0 -20">
       <a-plane width="60" height="120" segments-width="30" segments-height="60"
-               material="color: #00ffff; wireframe: true; transparent: true; opacity: 0.15"
+               material="color: #ffffff; wireframe: true; transparent: true; opacity: 0.4"
                animation="property: position; from: 0 0 0; to: 0 -2 0; dur: 800; loop: true; easing: linear"></a-plane>
     </a-entity>
     
-    <a-entity position="-2 0.05 -20" rotation="-90 0 0" geometry="primitive: plane; width: 0.1; height: 40" material="color: #00ffff; shader: flat; transparent: true; opacity: 0.8"></a-entity>
-    <a-entity position="0 0.05 -20" rotation="-90 0 0" geometry="primitive: plane; width: 0.1; height: 40" material="color: #00ffff; shader: flat; transparent: true; opacity: 0.8"></a-entity>
-    <a-entity position="2 0.05 -20" rotation="-90 0 0" geometry="primitive: plane; width: 0.1; height: 40" material="color: #00ffff; shader: flat; transparent: true; opacity: 0.8"></a-entity>
+    <a-entity position="-2 0.05 -20" rotation="-90 0 0" geometry="primitive: plane; width: 0.1; height: 40" material="color: #ffffff; shader: flat; transparent: true; opacity: 0.6"></a-entity>
+    <a-entity position="0 0.05 -20" rotation="-90 0 0" geometry="primitive: plane; width: 0.1; height: 40" material="color: #ffffff; shader: flat; transparent: true; opacity: 0.6"></a-entity>
+    <a-entity position="2 0.05 -20" rotation="-90 0 0" geometry="primitive: plane; width: 0.1; height: 40" material="color: #ffffff; shader: flat; transparent: true; opacity: 0.6"></a-entity>
 
-    <a-torus radius="6" radius-tubular="0.05" arc="180" position="0 0 -10" material="color: #ff00ff; shader: flat; transparent: true; opacity: 0.4"></a-torus>
-    <a-torus radius="6" radius-tubular="0.05" arc="180" position="0 0 -20" material="color: #00ffff; shader: flat; transparent: true; opacity: 0.4"></a-torus>
-    <a-torus radius="6" radius-tubular="0.05" arc="180" position="0 0 -30" material="color: #ff00ff; shader: flat; transparent: true; opacity: 0.4"></a-torus>
-    <a-torus radius="6" radius-tubular="0.05" arc="180" position="0 0 -40" material="color: #00ffff; shader: flat; transparent: true; opacity: 0.4"></a-torus>
+    <a-torus radius="6" radius-tubular="0.05" arc="180" position="0 0 -10" material="color: #0088ff; shader: flat; transparent: true; opacity: 0.4"></a-torus>
+    <a-torus radius="6" radius-tubular="0.05" arc="180" position="0 0 -20" material="color: #00bbff; shader: flat; transparent: true; opacity: 0.4"></a-torus>
+    <a-torus radius="6" radius-tubular="0.05" arc="180" position="0 0 -30" material="color: #0088ff; shader: flat; transparent: true; opacity: 0.4"></a-torus>
+    <a-torus radius="6" radius-tubular="0.05" arc="180" position="0 0 -40" material="color: #00bbff; shader: flat; transparent: true; opacity: 0.4"></a-torus>
 
-    <a-circle radius="15" position="0 3 -50" material="color: #ff0055; shader: flat; transparent: true; opacity: 0.8" 
+    <a-circle radius="15" position="0 3 -50" material="color: #FFA500; shader: flat; transparent: true; opacity: 0.9" 
               animation="property: scale; to: 1.05 1.05 1.05; dur: 2000; loop: true; dir: alternate; easing: easeInOutSine"></a-circle>
     
-    <a-plane width="35" height="1" position="0 2 -49.9" material="color: #05021a; shader: flat"></a-plane>
-    <a-plane width="35" height="1" position="0 0 -49.9" material="color: #05021a; shader: flat"></a-plane>
-    <a-plane width="35" height="1" position="0 -2 -49.9" material="color: #05021a; shader: flat"></a-plane>
+    <a-plane width="35" height="1" position="0 2 -49.9" material="color: #87CEEB; shader: flat"></a-plane>
+    <a-plane width="35" height="1" position="0 0 -49.9" material="color: #87CEEB; shader: flat"></a-plane>
+    <a-plane width="35" height="1" position="0 -2 -49.9" material="color: #87CEEB; shader: flat"></a-plane>
 
-    <a-light type="ambient" color="#222"></a-light>
-    <a-light type="point" intensity="1.5" color="#ff00ff" position="0 5 -10"></a-light>
-    <a-light type="point" intensity="1.5" color="#00ffff" position="0 5 -30"></a-light>
+    <a-light type="ambient" color="#fff" intensity="0.6"></a-light>
+    <a-light type="directional" intensity="0.8" color="#fff" position="-1 2 1"></a-light>
   </a-scene>
 </body>
 </html>
